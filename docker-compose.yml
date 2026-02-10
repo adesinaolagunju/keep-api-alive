@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  keep-alive:
+    container_name: keep-alive
+    build: .
+    ports:
+      - "4009:4009"
+    restart: unless-stopped

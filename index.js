@@ -7,12 +7,19 @@ const PORT = process.env.PORT || 4009;
 
 // ✅ Put ALL Render endpoints here (hard-coded)
 const PING_URLS = [
+  // Ubuntu
   "https://ubuntureport.onrender.com",
-  "https://aicelearnbackend.aicecommunity.com",
+
+  // AiCE
+  "https://aicelearnbackend.aicecommunity.com/api/health/",
   "https://aicelearnrealtime.aicecommunity.com",
-  "https://backend.sabiway.com",
+  "https://aicemail.onrender.com/api/health/",
+
+  // SabiWay
+  "https://backend.sabiway.com/api/health/",
   "https://realtime.sabiway.com",
   "https://waitlist.sabiway.com",
+  
 ];
 
 // ✅ Health route for THIS keep-alive service

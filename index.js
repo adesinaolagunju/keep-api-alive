@@ -20,6 +20,9 @@ const PING_URLS = [
   "https://realtime.sabiway.com",
   "https://waitlist.sabiway.com",
   
+
+  // Ajobabalaje
+  "https://ajobabalaje-server.onrender.com/api/health/"
 ];
 
 // ✅ Health route for THIS keep-alive service

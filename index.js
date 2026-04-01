@@ -17,12 +17,13 @@ const PING_URLS = [
 
   // SabiWay
   "https://backend.sabiway.com/api/health/",
+  "https://backend.sabiway.com/api/posts/",
   "https://realtime.sabiway.com",
   "https://waitlist.sabiway.com",
   
 
   // Ajobabalaje
-  "https://ajobabalaje-server.onrender.com/api/health/"
+  "https://ajobabalaje.onrender.com/api/health/"
 ];
 
 // ✅ Health route for THIS keep-alive service

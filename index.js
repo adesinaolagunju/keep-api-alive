@@ -11,8 +11,8 @@ const PING_URLS = [
   "https://ubuntureport.onrender.com",
 
   // AiCE
-  "https://aicelearnbackend.aicecommunity.com/api/health/",
-  "https://aicelearnrealtime.aicecommunity.com",
+  "https://backend.aicecommunity.com/api/health/",
+  "https://realtime.aicecommunity.com",
   "https://aicemail.onrender.com/api/health/",
 
   // SabiWay

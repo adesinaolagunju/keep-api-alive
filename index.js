@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 4009;
 
 // Every 5 minutes
 const PING_URLS_5MIN = [
-  "https://adekunle-news-automation-backend.onrender.com/api/news/post_all/"
+  { url: "https://adekunle-news-automation-backend.onrender.com/api/news/post_all/", method: "post" },
 ];
 
 // Every 10 minutes
@@ -29,28 +29,41 @@ const PING_URLS_10MIN = [
   "https://backend.sabiway.com/api/posts/",
   "https://realtime.sabiway.com",
   "https://waitlist.sabiway.com",
-  
+
   // Ajobabalaje
-  "https://ajobabalaje.onrender.com/api/health/"
+  "https://ajobabalaje.onrender.com/api/health/",
 ];
 
 // Every 70 minutes
 const PING_URLS_70MIN = [
-  "https://adekunle-news-automation-backend.onrender.com/api/news/fetch_recent/",
+  { url: "https://adekunle-news-automation-backend.onrender.com/api/news/fetch_recent/", method: "post" },
 ];
 
 // ────────────────────────────────────────────────
-// ✅ Shared ping helper
+// ✅ Shared helpers
 // ────────────────────────────────────────────────
-async function pingUrls(urls, label) {
+
+// Normalize an entry (string or { url, method }) down to just its URL,
+// used for building clean JSON responses on the manual trigger routes.
+function toUrl(entry) {
+  return typeof entry === "string" ? entry : entry.url;
+}
+
+async function pingUrls(entries, label) {
   console.log(`🔁 [${label}] Running keep-alive pings:`, new Date().toISOString());
 
-  for (const url of urls) {
+  for (const entry of entries) {
+    const url = toUrl(entry);
+    const method = typeof entry === "string" ? "get" : (entry.method || "get");
+
     try {
-      const res = await axios.get(url, { timeout: 15000 });
-      console.log(`✅ [${label}] Pinged ${url} - Status: ${res.status}`);
+      const res = method === "post"
+        ? await axios.post(url, {}, { timeout: 15000 })
+        : await axios.get(url, { timeout: 15000 });
+
+      console.log(`✅ [${label}] Pinged ${url} (${method.toUpperCase()}) - Status: ${res.status}`);
     } catch (err) {
-      console.error(`❌ [${label}] Failed to ping ${url} - ${err.message}`);
+      console.error(`❌ [${label}] Failed to ping ${url} (${method.toUpperCase()}) - ${err.message}`);
     }
   }
 }
@@ -86,38 +99,30 @@ setTimeout(() => pingUrls(PING_URLS_70MIN, "70min-initial"), 30 * 1000);
 // ✅ Manual trigger routes (optional, handy for debugging)
 // ────────────────────────────────────────────────
 app.get("/ping-all", async (req, res) => {
-  const results = [];
   const all = [
     ...PING_URLS_5MIN,
     ...PING_URLS_10MIN,
     ...PING_URLS_70MIN,
   ];
 
-  for (const url of all) {
-    try {
-      await axios.get(url, { timeout: 15000 });
-      results.push({ url, status: "ok" });
-    } catch {
-      results.push({ url, status: "failed" });
-    }
-  }
+  await pingUrls(all, "all-manual");
 
-  res.json(results);
+  res.json({ triggered: all.map(toUrl) });
 });
 
 app.get("/ping-5min", async (req, res) => {
   await pingUrls(PING_URLS_5MIN, "5min-manual");
-  res.json({ triggered: PING_URLS_5MIN });
+  res.json({ triggered: PING_URLS_5MIN.map(toUrl) });
 });
 
 app.get("/ping-10min", async (req, res) => {
   await pingUrls(PING_URLS_10MIN, "10min-manual");
-  res.json({ triggered: PING_URLS_10MIN });
+  res.json({ triggered: PING_URLS_10MIN.map(toUrl) });
 });
 
 app.get("/ping-70min", async (req, res) => {
   await pingUrls(PING_URLS_70MIN, "70min-manual");
-  res.json({ triggered: PING_URLS_70MIN });
+  res.json({ triggered: PING_URLS_70MIN.map(toUrl) });
 });
 
 // ────────────────────────────────────────────────

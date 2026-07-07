@@ -9,8 +9,8 @@ const PORT = process.env.PORT || 4009;
 // ✅ Group your endpoints by how often they need pinging
 // ────────────────────────────────────────────────
 
-// Every 5 minutes
-const PING_URLS_5MIN = [
+// Every 30 minutes
+const PING_URLS_30MIN = [
   { url: "https://adekunle-news-automation-backend.onrender.com/api/news/post_all/", method: "post" },
 ];
 
@@ -32,6 +32,9 @@ const PING_URLS_10MIN = [
 
   // Ajobabalaje
   "https://ajobabalaje.onrender.com/api/health/",
+
+  // Adekunle News Automation
+  "https://adekunle-news-automation-backend.onrender.com"
 ];
 
 // Every 70 minutes
@@ -82,8 +85,8 @@ app.get("/health", (req, res) => {
 // ✅ Schedules
 // ────────────────────────────────────────────────
 
-// Cron handles 5 and 10 min fine since they divide evenly into 60
-cron.schedule("*/5 * * * *", () => pingUrls(PING_URLS_5MIN, "5min"));
+// Cron handles 30 and 10 min fine since they divide evenly into 60
+cron.schedule("*/30 * * * *", () => pingUrls(PING_URLS_30MIN, "30min"));
 cron.schedule("*/10 * * * *", () => pingUrls(PING_URLS_10MIN, "10min"));
 
 // 70 minutes doesn't divide evenly into a clock hour, so cron syntax
@@ -100,7 +103,7 @@ setTimeout(() => pingUrls(PING_URLS_70MIN, "70min-initial"), 30 * 1000);
 // ────────────────────────────────────────────────
 app.get("/ping-all", async (req, res) => {
   const all = [
-    ...PING_URLS_5MIN,
+    ...PING_URLS_30MIN,
     ...PING_URLS_10MIN,
     ...PING_URLS_70MIN,
   ];
@@ -110,9 +113,9 @@ app.get("/ping-all", async (req, res) => {
   res.json({ triggered: all.map(toUrl) });
 });
 
-app.get("/ping-5min", async (req, res) => {
-  await pingUrls(PING_URLS_5MIN, "5min-manual");
-  res.json({ triggered: PING_URLS_5MIN.map(toUrl) });
+app.get("/ping-30min", async (req, res) => {
+  await pingUrls(PING_URLS_30MIN, "30min-manual");
+  res.json({ triggered: PING_URLS_30MIN.map(toUrl) });
 });
 
 app.get("/ping-10min", async (req, res) => {

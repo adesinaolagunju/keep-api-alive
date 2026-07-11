@@ -27,7 +27,7 @@ async function pingEndpoint(endpoint) {
       : await axios.get(url, { timeout: 30000 });
 
     statusCode = res.status;
-    success = true;   // ← axios only resolves on 2xx, so reaching here means success
+    success = true;   // axios only resolves on 2xx, so reaching here means success
     console.log(`✅ [${label}] Pinged ${url} (${method}) - Status: ${statusCode}`);
   } catch (err) {
     // if axios got a response but it was non-2xx, err.response exists
@@ -35,7 +35,6 @@ async function pingEndpoint(endpoint) {
     error = err.message;
     console.error(`❌ [${label}] Failed to ping ${url} (${method}) - ${error}`);
   }
-
 
   const responseTimeMs = Date.now() - startTime;
 
@@ -79,20 +78,20 @@ function unscheduleEndpoint(endpointId) {
   if (activeTimers.has(endpointId)) {
     clearInterval(activeTimers.get(endpointId));
     activeTimers.delete(endpointId);
+    console.log(`🗑️ Unscheduled endpoint: ${endpointId}`);
   }
 }
 
 // ────────────────────────────────────────────────
 // Load all active endpoints from DB and schedule
+// FIX: no longer wipes and recreates every timer on
+// every reload cycle. It only unschedules endpoints
+// that are no longer active, and only schedules
+// endpoints that don't already have a running timer.
+// This lets existing timers count down uninterrupted.
 // ────────────────────────────────────────────────
 async function loadEndpoints() {
   console.log("🔄 Loading endpoints from database...");
-
-  // Clear all existing timers
-  for (const [id, timer] of activeTimers) {
-    clearInterval(timer);
-  }
-  activeTimers.clear();
 
   try {
     const endpoints = await prisma.endpoint.findMany({
@@ -101,11 +100,23 @@ async function loadEndpoints() {
 
     console.log(`📡 Found ${endpoints.length} active endpoints`);
 
+    const currentIds = new Set(endpoints.map(ep => ep.id));
+
+    // Unschedule endpoints that are no longer active/present in DB
+    for (const id of activeTimers.keys()) {
+      if (!currentIds.has(id)) {
+        unscheduleEndpoint(id);
+      }
+    }
+
+    // Only schedule endpoints that don't already have a timer running
     for (const ep of endpoints) {
-      try {
-        scheduleEndpoint(ep);
-      } catch (err) {
-        console.error(`❌ Failed to schedule "${ep.label}": ${err.message}`);
+      if (!activeTimers.has(ep.id)) {
+        try {
+          scheduleEndpoint(ep);
+        } catch (err) {
+          console.error(`❌ Failed to schedule "${ep.label}": ${err.message}`);
+        }
       }
     }
 
@@ -135,7 +146,6 @@ app.get("/health", async (req, res) => {
 app.get("/ping-all", async (req, res) => {
   const endpoints = await prisma.endpoint.findMany({ where: { isActive: true } });
 
-  // Ping all concurrently (don't await individually)
   const results = await Promise.allSettled(endpoints.map(ep => pingEndpoint(ep)));
 
   res.json({
@@ -182,7 +192,6 @@ app.get("/endpoints", async (req, res) => {
 // Start server
 // ────────────────────────────────────────────────
 async function start() {
-  // Connect to database
   try {
     await prisma.$connect();
     console.log("✅ Connected to database");
@@ -191,13 +200,11 @@ async function start() {
     process.exit(1);
   }
 
-  // Load and schedule endpoints
   await loadEndpoints();
 
   // Refresh endpoint list every 5 minutes (picks up DB changes without restart)
   setInterval(loadEndpoints, 5 * 60 * 1000);
 
-  // Start Express
   app.listen(PORT, () => {
     console.log(`✅ Keep-alive server running on port ${PORT}`);
   });

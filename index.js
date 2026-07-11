@@ -27,12 +27,15 @@ async function pingEndpoint(endpoint) {
       : await axios.get(url, { timeout: 15000 });
 
     statusCode = res.status;
-    success = res.ok;
+    success = true;   // ← axios only resolves on 2xx, so reaching here means success
     console.log(`✅ [${label}] Pinged ${url} (${method}) - Status: ${statusCode}`);
   } catch (err) {
+    // if axios got a response but it was non-2xx, err.response exists
+    statusCode = err.response?.status ?? null;
     error = err.message;
     console.error(`❌ [${label}] Failed to ping ${url} (${method}) - ${error}`);
   }
+
 
   const responseTimeMs = Date.now() - startTime;
 
@@ -99,7 +102,11 @@ async function loadEndpoints() {
     console.log(`📡 Found ${endpoints.length} active endpoints`);
 
     for (const ep of endpoints) {
-      scheduleEndpoint(ep);
+      try {
+        scheduleEndpoint(ep);
+      } catch (err) {
+        console.error(`❌ Failed to schedule "${ep.label}": ${err.message}`);
+      }
     }
 
     return endpoints;

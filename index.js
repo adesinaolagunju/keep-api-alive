@@ -23,8 +23,8 @@ async function pingEndpoint(endpoint) {
 
   try {
     const res = method === "POST"
-      ? await axios.post(url, {}, { timeout: 30000 })
-      : await axios.get(url, { timeout: 30000 });
+      ? await axios.post(url, {}, { timeout: 120000 })
+      : await axios.get(url, { timeout: 120000 });
 
     statusCode = res.status;
     success = true;   // axios only resolves on 2xx, so reaching here means success

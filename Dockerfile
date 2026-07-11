@@ -10,6 +10,9 @@ COPY package*.json ./
 # ✅ Install only production dependencies (modern safe flag)
 RUN npm install --omit=dev
 
+# ✅ Generate Prisma client
+RUN npx prisma generate
+
 # ✅ Copy app source
 COPY . .
 

@@ -1,136 +1,199 @@
 import express from "express";
-import cron from "node-cron";
 import axios from "axios";
+import { PrismaClient } from "@prisma/client";
 
+const prisma = new PrismaClient();
 const app = express();
 const PORT = process.env.PORT || 4009;
 
 // ────────────────────────────────────────────────
-// ✅ Group your endpoints by how often they need pinging
+// Active ping timers: Map<endpointId, NodeJS.Timeout>
 // ────────────────────────────────────────────────
-
-// Every 30 minutes
-const PING_URLS_30MIN = [
-  { url: "https://adekunle-news-automation-backend.onrender.com/api/news/post_all/", method: "post" },
-];
-
-// Every 10 minutes
-const PING_URLS_10MIN = [
-  // Ubuntu
-  "https://ubuntureport.onrender.com",
-
-  // AiCE
-  "https://backend.aicecommunity.com/api/health/",
-  "https://realtime.aicecommunity.com",
-  "https://aicemail.onrender.com/api/health/",
-
-  // SabiWay
-  "https://backend.sabiway.com/api/health/",
-  "https://backend.sabiway.com/api/posts/",
-  "https://realtime.sabiway.com",
-  "https://waitlist.sabiway.com",
-
-  // Ajobabalaje
-  "https://ajobabalaje.onrender.com/api/health/",
-
-  // Adekunle News Automation
-  "https://adekunle-news-automation-backend.onrender.com"
-];
-
-// Every 70 minutes
-const PING_URLS_70MIN = [
-  { url: "https://adekunle-news-automation-backend.onrender.com/api/news/fetch_recent/", method: "post" },
-];
+const activeTimers = new Map();
 
 // ────────────────────────────────────────────────
-// ✅ Shared helpers
+// Ping a single endpoint and log result
 // ────────────────────────────────────────────────
+async function pingEndpoint(endpoint) {
+  const { id, label, url, method } = endpoint;
+  const startTime = Date.now();
+  let statusCode = null;
+  let success = false;
+  let error = null;
 
-// Normalize an entry (string or { url, method }) down to just its URL,
-// used for building clean JSON responses on the manual trigger routes.
-function toUrl(entry) {
-  return typeof entry === "string" ? entry : entry.url;
-}
+  try {
+    const res = method === "POST"
+      ? await axios.post(url, {}, { timeout: 15000 })
+      : await axios.get(url, { timeout: 15000 });
 
-async function pingUrls(entries, label) {
-  console.log(`🔁 [${label}] Running keep-alive pings:`, new Date().toISOString());
+    statusCode = res.status;
+    success = res.ok;
+    console.log(`✅ [${label}] Pinged ${url} (${method}) - Status: ${statusCode}`);
+  } catch (err) {
+    error = err.message;
+    console.error(`❌ [${label}] Failed to ping ${url} (${method}) - ${error}`);
+  }
 
-  for (const entry of entries) {
-    const url = toUrl(entry);
-    const method = typeof entry === "string" ? "get" : (entry.method || "get");
+  const responseTimeMs = Date.now() - startTime;
 
-    try {
-      const res = method === "post"
-        ? await axios.post(url, {}, { timeout: 15000 })
-        : await axios.get(url, { timeout: 15000 });
-
-      console.log(`✅ [${label}] Pinged ${url} (${method.toUpperCase()}) - Status: ${res.status}`);
-    } catch (err) {
-      console.error(`❌ [${label}] Failed to ping ${url} (${method.toUpperCase()}) - ${err.message}`);
-    }
+  try {
+    await prisma.pingLog.create({
+      data: {
+        endpointId: id,
+        statusCode,
+        success,
+        responseTimeMs,
+        error,
+      },
+    });
+  } catch (dbErr) {
+    console.error(`❌ [${label}] Failed to write log: ${dbErr.message}`);
   }
 }
 
 // ────────────────────────────────────────────────
-// ✅ Health route for THIS keep-alive service
+// Schedule a single endpoint
 // ────────────────────────────────────────────────
-app.get("/health", (req, res) => {
+function scheduleEndpoint(endpoint) {
+  const { id, label, intervalMinutes } = endpoint;
+  const intervalMs = intervalMinutes * 60 * 1000;
+
+  // Clear existing timer if any
+  if (activeTimers.has(id)) {
+    clearInterval(activeTimers.get(id));
+  }
+
+  const timer = setInterval(() => pingEndpoint(endpoint), intervalMs);
+  activeTimers.set(id, timer);
+
+  console.log(`📅 Scheduled "${label}" every ${intervalMinutes}min`);
+}
+
+// ────────────────────────────────────────────────
+// Unschedule an endpoint
+// ────────────────────────────────────────────────
+function unscheduleEndpoint(endpointId) {
+  if (activeTimers.has(endpointId)) {
+    clearInterval(activeTimers.get(endpointId));
+    activeTimers.delete(endpointId);
+  }
+}
+
+// ────────────────────────────────────────────────
+// Load all active endpoints from DB and schedule
+// ────────────────────────────────────────────────
+async function loadEndpoints() {
+  console.log("🔄 Loading endpoints from database...");
+
+  // Clear all existing timers
+  for (const [id, timer] of activeTimers) {
+    clearInterval(timer);
+  }
+  activeTimers.clear();
+
+  try {
+    const endpoints = await prisma.endpoint.findMany({
+      where: { isActive: true },
+    });
+
+    console.log(`📡 Found ${endpoints.length} active endpoints`);
+
+    for (const ep of endpoints) {
+      scheduleEndpoint(ep);
+    }
+
+    return endpoints;
+  } catch (err) {
+    console.error(`❌ Failed to load endpoints: ${err.message}`);
+    return [];
+  }
+}
+
+// ────────────────────────────────────────────────
+// Health route
+// ────────────────────────────────────────────────
+app.get("/health", async (req, res) => {
+  const endpointCount = await prisma.endpoint.count({ where: { isActive: true } });
   res.json({
     status: "alive",
     time: new Date().toISOString(),
+    activeEndpoints: endpointCount,
+    scheduledTimers: activeTimers.size,
   });
 });
 
 // ────────────────────────────────────────────────
-// ✅ Schedules
-// ────────────────────────────────────────────────
-
-// Cron handles 30 and 10 min fine since they divide evenly into 60
-cron.schedule("*/30 * * * *", () => pingUrls(PING_URLS_30MIN, "30min"));
-cron.schedule("*/10 * * * *", () => pingUrls(PING_URLS_10MIN, "10min"));
-
-// 70 minutes doesn't divide evenly into a clock hour, so cron syntax
-// can't express it directly. Plain setInterval handles it cleanly instead.
-const SEVENTY_MIN_MS = 70 * 60 * 1000;
-setInterval(() => pingUrls(PING_URLS_70MIN, "70min"), SEVENTY_MIN_MS);
-
-// Optional: run the 70-min group once shortly after boot so you're not
-// waiting a full 70 minutes for the first ping after a deploy.
-setTimeout(() => pingUrls(PING_URLS_70MIN, "70min-initial"), 30 * 1000);
-
-// ────────────────────────────────────────────────
-// ✅ Manual trigger routes (optional, handy for debugging)
+// Manual trigger: ping all active endpoints now
 // ────────────────────────────────────────────────
 app.get("/ping-all", async (req, res) => {
-  const all = [
-    ...PING_URLS_30MIN,
-    ...PING_URLS_10MIN,
-    ...PING_URLS_70MIN,
-  ];
+  const endpoints = await prisma.endpoint.findMany({ where: { isActive: true } });
 
-  await pingUrls(all, "all-manual");
+  // Ping all concurrently (don't await individually)
+  const results = await Promise.allSettled(endpoints.map(ep => pingEndpoint(ep)));
 
-  res.json({ triggered: all.map(toUrl) });
-});
-
-app.get("/ping-30min", async (req, res) => {
-  await pingUrls(PING_URLS_30MIN, "30min-manual");
-  res.json({ triggered: PING_URLS_30MIN.map(toUrl) });
-});
-
-app.get("/ping-10min", async (req, res) => {
-  await pingUrls(PING_URLS_10MIN, "10min-manual");
-  res.json({ triggered: PING_URLS_10MIN.map(toUrl) });
-});
-
-app.get("/ping-70min", async (req, res) => {
-  await pingUrls(PING_URLS_70MIN, "70min-manual");
-  res.json({ triggered: PING_URLS_70MIN.map(toUrl) });
+  res.json({
+    triggered: endpoints.length,
+    results: results.map((r, i) => ({
+      url: endpoints[i].url,
+      status: r.status,
+    })),
+  });
 });
 
 // ────────────────────────────────────────────────
-// ✅ Start server
+// Manual trigger: ping a single endpoint by ID
 // ────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`✅ Keep-alive server running on port ${PORT}`);
+app.get("/ping/:id", async (req, res) => {
+  const endpoint = await prisma.endpoint.findUnique({ where: { id: req.params.id } });
+  if (!endpoint) {
+    return res.status(404).json({ error: "Endpoint not found" });
+  }
+
+  await pingEndpoint(endpoint);
+  res.json({ pinged: endpoint.url });
 });
+
+// ────────────────────────────────────────────────
+// Reload endpoints from database (picks up changes)
+// ────────────────────────────────────────────────
+app.post("/reload", async (req, res) => {
+  const endpoints = await loadEndpoints();
+  res.json({ reloaded: endpoints.length });
+});
+
+// ────────────────────────────────────────────────
+// List currently scheduled endpoints
+// ────────────────────────────────────────────────
+app.get("/endpoints", async (req, res) => {
+  const endpoints = await prisma.endpoint.findMany({
+    orderBy: { createdAt: "asc" },
+  });
+  res.json(endpoints);
+});
+
+// ────────────────────────────────────────────────
+// Start server
+// ────────────────────────────────────────────────
+async function start() {
+  // Connect to database
+  try {
+    await prisma.$connect();
+    console.log("✅ Connected to database");
+  } catch (err) {
+    console.error(`❌ Database connection failed: ${err.message}`);
+    process.exit(1);
+  }
+
+  // Load and schedule endpoints
+  await loadEndpoints();
+
+  // Refresh endpoint list every 5 minutes (picks up DB changes without restart)
+  setInterval(loadEndpoints, 5 * 60 * 1000);
+
+  // Start Express
+  app.listen(PORT, () => {
+    console.log(`✅ Keep-alive server running on port ${PORT}`);
+  });
+}
+
+start();

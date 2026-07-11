@@ -21,8 +21,10 @@
   },
   "homepage": "https://github.com/ChiAdeTech/keep-api-alive#readme",
   "dependencies": {
+    "@prisma/client": "^5.20.0",
     "axios": "^1.13.2",
     "express": "^5.2.1",
-    "node-cron": "^4.2.1"
+    "node-cron": "^4.2.1",
+    "prisma": "^5.20.0"
   }
 }

@@ -6,4 +6,6 @@ services:
     build: .
     ports:
       - "4009:4009"
+    environment:
+      - DATABASE_URL=postgresql://neondb_owner:npg_tP62SjzYRNoK@ep-gentle-queen-aigbw8um.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require
     restart: unless-stopped
